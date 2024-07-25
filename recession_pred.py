@@ -53,7 +53,7 @@ for model_name, model in models.items():
             'accuracy': accuracy,
             'confusion_matrix': conf_matrix,
             'classification_report': class_report
-        }
+}   
 
 # Display results
 for model_name, result in results.items():
