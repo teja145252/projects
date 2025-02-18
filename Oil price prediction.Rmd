@@ -1,0 +1,236 @@
+---
+title: "SDM project 2"
+output: html_document
+date: "2023-05-04"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(readr)
+oil <- read_csv("C:/Users/17167/Downloads/oil.csv")
+df<-data.frame(oil)
+```
+
+```{r}
+# time series plot 
+library(ggplot2)
+ggplot(df, aes(x=date, y=dcoilwtico)) +
+       geom_line()
+```
+```{r}
+library(imputeTS)
+statsNA(df$dcoilwtico)
+```
+```{r}
+# data imputation with linear interpolation
+#library(imputeTS)
+#interpolated_df <- na_interpolation(df, option = "linear")
+```
+
+```{r}
+library(imputeTS)
+library(xts)
+library(lubridate)
+ts_df <- ts(df$dcoilwtico, start = c(year(df$date[1]), month(df$date[1]), day(df$date[1])),
+            frequency = 365)
+imputed_data <- na_seadec(ts_df)
+imputed_df <- data.frame(date = index(imputed_data), dcoilwtico = as.numeric(imputed_data))
+
+```
+
+```{r}
+#library(imputeTS)
+#imputed_df2 <- na_kalman(df)
+```
+
+
+```{r}
+library(ggplot2)
+plot<-ggplot(imputed_df, aes(x=date, y=dcoilwtico)) +
+       geom_line()
+plot
+```
+
+```{r}
+library(tseries)
+adf_test <- adf.test(imputed_df$dcoilwtico)
+adf_test
+
+#The output of the ADF test you ran indicates that the dcoilwtico time series in imputed_df is not stationary. This is suggested by the fact that the test statistic (Dickey-Fuller = -1.4754) is larger than the critical value at the 5% level for all common choices of the null hypothesis. The p-value of 0.8004 is also larger than the common significance level of 0.05, which further supports the notion that we cannot reject the null hypothesis of a unit root (i.e., non-stationarity).
+```
+
+```{r}
+plot(imputed_df$date, imputed_df$dcoilwtico, type = "l", xlab = "Date", ylab = "Value")
+```
+
+```{r}
+library(lubridate)
+imputed_df$date <- as.Date(imputed_df$date)
+imputed_df$dcoilwtico <- as.numeric(imputed_df$dcoilwtico)
+ts_df <- ts(imputed_df$dcoilwtico, start = c(2013, 1),
+            frequency = 365)
+ts_decomp <- decompose(ts_df, type = "multiplicative")
+plot(ts_decomp$trend, main = "Trend Component")
+plot(ts_decomp$seasonal, main = "Seasonal Component")
+plot(ts_decomp$random, main = "Residual Component")
+
+```
+
+```{r}
+library(forecast)
+ts_data <- ts(imputed_df$dcoilwtico, frequency = 12, start = c(2013, 1))
+```
+
+```{r}
+# ETS model (chosen by the algorithm with low AIC and BIC values)
+ets_model <- ets(ts_data,model="ANN")
+summary(ets_model)
+plot(forecast(ets_model), main = "ETS Model")
+```
+
+```{r}
+# ETS model (Tested with MAA model and compared with ANN)
+ets_model <- ets(ts_data,model="MAA")
+summary(ets_model)
+plot(forecast(ets_model), main = "ETS Model")
+```
+
+```{r}
+#Holt winters models , checking both additive and multiplicative models and considering the model with lowest rmse.
+library(ggplot2)
+library(forecast)
+library(gridExtra)
+hw_df <- ts(imputed_df$dcoilwtico, start = c(2013, 1),
+            frequency = 12)
+aust <- window(hw_df)
+fit1 <- hw(aust,seasonal="additive")
+fit2 <- hw(aust,seasonal="multiplicative")
+```
+
+```{r}
+# summary of additive model 
+summary(fit1)
+# Create a plot for the additive model
+plot1 <- autoplot(aust) +
+  autolayer(fit1, series="HW additive forecasts", PI=FALSE) +
+  xlab("Year") +
+  ylab("dcoilwtico") +
+  ggtitle("Holt-Winters Additive Model") +
+  guides(colour=guide_legend(title="Forecast"))
+plot1
+```
+
+```{r}
+# summary of multiplicative model
+summary(fit2)
+plot2 <- autoplot(aust) +
+  autolayer(fit2, series="HW multiplicative forecasts", PI=FALSE) +
+  xlab("Year") +
+  ylab("dcoilwtico") +
+  ggtitle("Holt-Winters Multiplicative Model") +
+  guides(colour=guide_legend(title="Forecast"))
+plot2
+```
+
+```{r}
+autoplot(aust) +
+  autolayer(fit1, series="HW additive forecasts", PI=FALSE) +
+  autolayer(fit2, series="HW multiplicative forecasts",
+    PI=FALSE) +
+  xlab("Year") +
+  ylab("dcoilwtico") +
+  ggtitle("holt winters graph for oil dataset") +
+  guides(colour=guide_legend(title="Forecast"))
+```
+
+```{r}
+fc <- hw(subset(hw_df,end=length(hw_df)-30),
+         damped = TRUE, seasonal="multiplicative", h=30)
+autoplot(hw_df) +
+  autolayer(fc, series="HW multi damped", PI=FALSE)+
+  guides(colour=guide_legend(title="Daily forecasts"))
+summary(fc)
+```
+
+
+```{r}
+# ARIMA 
+library(forecast)
+my_ts <- ts(imputed_df$dcoilwtico, start = c(2013, 1),
+            frequency = 365)
+arima_model <- auto.arima(my_ts)
+summary(arima_model)
+```
+
+```{r}
+#Seasonal ARIMA
+library(forecast)
+ts_data <- ts(imputed_df$dcoilwtico, frequency = 12, start = c(2013,1))
+sarima_model <- Arima(ts_data, order = c(2, 1, 2), seasonal = list(order = c(1, 1, 1), period = 12))
+summary(sarima_model)
+forecast(sarima_model, h = 12)
+
+```
+
+
+
+```{r}
+# prophet
+library(prophet)
+ts_data <- data.frame(ds = imputed_df$date, y = imputed_df$dcoilwtico)
+prophet_model <- prophet(ts_data, seasonality.mode = "multiplicative",yearly.seasonality=TRUE)
+future_dates <- make_future_dataframe(prophet_model, periods = 365)
+forecast <- predict(prophet_model, future_dates)
+plot(prophet_model, forecast)
+summary(forecast)
+# RMSE
+actual <- imputed_df$dcoilwtico
+predicted <- forecast$yhat[1:length(actual)]
+rmse <- sqrt(mean((actual - predicted)^2))
+cat("RMSE:", rmse, "\n")
+# AIC, BIC 
+n <- nrow(imputed_df)
+k <- 1  # number of estimated parameters
+residuals <- actual - predicted
+prophet_model$sigma <- 0.1
+loglik <- -0.5 * sum(log(2 * pi) + log(prophet_model$sigma) + (residuals / prophet_model$sigma)^2)
+aic <- -2 * loglik + 2 * k
+bic <- -2 * loglik + k * log(n)
+cat("AIC:", aic, "\n")
+cat("BIC:", bic, "\n")
+
+```
+
+
+```{r}
+# STL model
+library(stats)
+stl_df <- ts(imputed_df$dcoilwtico, start = c(year(imputed_df$date[1]), month(imputed_df$date[1]), day(imputed_df$date[1])),
+            frequency = 365)
+stl_model <- stl(stl_df,s.window = 'periodic')
+fitted_values <- stl_model$time.series[, "seasonal"] + stl_model$time.series[, "trend"] + stl_model$time.series[, "remainder"]
+residuals <- imputed_df$dcoilwtico - fitted_values
+
+# Calculate RMSE
+rmse <- sqrt(mean(residuals^2))
+
+# Calculate AIC and BIC
+n <- length(imputed_df)
+k <- length(stl_model$time.series)
+rss <- sum(residuals^2)
+aic <- n*log(rss/n) + 2*k
+bic <- n*log(rss/n) + k*log(n)
+
+print(paste0("RMSE: ", round(rmse, 2)))
+print(paste0("AIC: ", round(aic, 2)))
+print(paste0("BIC: ", round(bic, 2)))
+
+
+
+```
+### Finally by trying all the above models with different variations we can conclude that the seasonal ARIMA model gave us the best RMSE and also the lowest AIC and BIC values which we chose as our metrics to evaluate the performance of the models.
+
+
